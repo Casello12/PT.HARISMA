@@ -289,6 +289,18 @@ class CartController extends Controller
     }
 
     /**
+     * Generate order number with format SO-YYYYMMDD-XXXX
+     */
+    private function generateOrderNumber()
+    {
+        $date = now()->format('Ymd');
+        $count = SalesOrder::whereDate('created_at', now()->toDateString())->count();
+        $sequence = str_pad($count + 1, 4, '0', STR_PAD_LEFT);
+        
+        return "SO-{$date}-{$sequence}";
+    }
+
+    /**
      * Process checkout
      */
     public function processCheckout(Request $request)
@@ -310,14 +322,19 @@ class CartController extends Controller
             ], 400);
         }
 
-        // Create sales order
+        $totalAmount = $cartItems->sum('subtotal');
+
+        // Create sales order with order_number
         $salesOrder = SalesOrder::create([
+            'order_number' => $this->generateOrderNumber(),
             'customer_id' => Auth::id(),
-            'order_date' => now(),
-            'status' => 'pending',
-            'total_amount' => $cartItems->sum('subtotal'),
-            'notes' => $validated['notes'] ?? null,
-            'payment_method' => $validated['payment_method'],
+            'order_date' => now()->toDateString(),
+            'status' => 'pending_confirmation',
+            'subtotal' => $totalAmount,
+            'grand_total' => $totalAmount,
+            'paid_amount' => 0,
+            'remaining_amount' => $totalAmount,
+            'customer_notes' => $validated['notes'] ?? null,
             'shipping_address' => $validated['shipping_address'],
         ]);
 
@@ -326,9 +343,12 @@ class CartController extends Controller
             SalesOrderItem::create([
                 'sales_order_id' => $salesOrder->id,
                 'product_id' => $cartItem->product_id,
+                'product_name' => $cartItem->product->name,
+                'product_sku' => $cartItem->product->sku,
                 'quantity' => $cartItem->quantity,
                 'unit_price' => $cartItem->unit_price,
                 'subtotal' => $cartItem->subtotal,
+                'total' => $cartItem->subtotal,
             ]);
 
             // Update stock
@@ -345,6 +365,7 @@ class CartController extends Controller
             'success' => true,
             'message' => 'Pesanan berhasil dibuat',
             'order_id' => $salesOrder->id,
+            'order_number' => $salesOrder->order_number,
         ]);
     }
 }
